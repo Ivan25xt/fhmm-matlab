@@ -43,11 +43,11 @@ timestart = datenum(timevector{1});
 
 timeend = datenum(timevector{tv_dim_r});
 
-dt = datenum('00:00:00.020')-datenum('00:00:00.010');
+dt = 1/8640000; % 10ms time interval
 
-dt_cutoff = datenum('00:30:00') - datenum('00:00:00.010');
+i_cutoff_samples = 180000-1; % 30 minutes last window
 
-t_cutoffstart = timeend - dt_cutoff;
+t_cutoffstart = timeend - i_cutoff_samples*dt;
 
 sync_timevector = timestart:dt:timeend;
 sync_timevector = sync_timevector';
@@ -74,43 +74,86 @@ for i = 1:NUMBER_OF_RUNNERS
 
 % convert to numerical vectors
 	ts = (price(1:end,1)); % has to remain cell type coloumn vector; strips fractions of a second
-	ts_ms = strcat(ts,'0'); % add zero to convert to miliseconds
+    
+	ts_ms = strcat(ts,'0'); % add zero to convert to miliseconds and adds the racing date. Note the bracket
 
 	BSP = cell2mat(price(1:end, 3));
-% DO NOT USE FOR TIME SERIES!!!!!!!!!!
+
+    % DO NOT USE FOR TIME SERIES!!!!!!!!!!
 % inp_str_format = 'HH:MM:SS.FFF'; 
 % ts_ms_num = datenum(ts_ms,inp_str_format);
 % DO NOT USE FOR TIME SERIES!!!!!!!!!!
 
 	ts_ms_num = datenum(ts_ms);
-	BSP_ts = timeseries(BSP',ts_ms_num'); % work with time series objects not fints (part of financial toolbox)
+    
+	ts_BSP_async = timeseries(BSP',ts_ms_num'); % work with time series objects not fints (part of financial toolbox)
 
-% WATCH OUT - NON COMMUTATIVE
-	[ts1 BSP_sync_ts] = synchronize(dummyts,BSP_ts,'Union'); % output vector BSP_sync_ts is synchronized
+% WATCH OUT -synchronize is not the solution as it takes shorter than both
+% time series limits
+	ts_BSP_sync = resample(ts_BSP_async, sync_timevector, 'zoh'); % output vector BSP_sync_ts is synchronized but not beyond the time of the original series
+    
 
+    
+% It want expand with zoh beyond the 
+       
+    ts_BSP_sync.Length
+
+    plot(ts_BSP_sync);
+    hold on;
+    
+    
 
 % Cutoff (extract) the last portion of the market trading
-	BSP_sync_ts_cutoff = getsampleusingtime(BSP_sync_ts, t_cutoffstart,timeend);
-	plot(BSP_sync_ts_cutoff);
+	ts_BSP_sync_cutoff = getsampleusingtime(ts_BSP_sync, t_cutoffstart,timeend);
+    ts_BSP_sync_cutoff.Length
+   
+   
+ts_BSP_sync_cutoff.name = runners{i};     
 
+    i
 
 % Append the time series in the collection
 	switch i
 		case 1 
-		BSP_ts_collection = BSP_sync_ts_cutoff;
-		case 2
-		BSP_ts_collection = tscollection(BSP_ts_collection,BSP_sync_ts_cutoff);
+		tsc_BSP = tscollection(ts_BSP_sync_cutoff);
+        % numerical matrix
+        m_DM = reshape(ts_BSP_sync_cutoff.data, [ts_BSP_sync_cutoff.Length,1]);
+%  		case 2
+%		BSP_ts_collection = tscollection(BSP_ts_collection_dummy,BSP_sync_ts_cutoff);
 		otherwise
-		BSP_ts_collection = addts(BSP_ts_collection,BSP_sync_ts_cutoff)
+		tsc_BSP = addts(tsc_BSP,ts_BSP_sync_cutoff);
+        
+        m_DM = horzcat(m_DM,reshape(ts_BSP_sync_cutoff.data, [ts_BSP_sync_cutoff.Length,1])); %numerical matrix
+        
 	end % switch
 
 end % for
 
-X = BSP_ts_collection.Data; % this is probably OK for matrix extraction 
+
+
+% pad the NaN values beyond the final time value
+
+ [row_nan_whole, col_nan_whole] = find(isnan(m_DM));
+
+for j =1:6
+    
+    [row_nan, col_nan] = find(isnan(m_DM(:,j)));
+    if any(col_nan_whole == j)
+        m_DM(row_nan,j) = m_DM(row_nan(1)-1,j);
+    end
+
+end
+
+%print('Any NaNs in the time series?')
+any(isnan(m_DM)==1)
+
+ts_names = gettimeseriesnames(tsc_BSP);
+
+%X = BSP_ts_collection.Data; % this is probably OK for matrix extraction 
 % see getdatasamples function
 
 
-% [Mu,Cov,P,Pi,LL]=fhmm(X,T,M,K,cyc,tol)
+
 
 % First Try
 
